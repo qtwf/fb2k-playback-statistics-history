@@ -18,14 +18,14 @@ At least one from each category below is required to make use of this feature.
 
 - **Aggregation**
   - foo_playcount and foo_enhanced_playcount
-  - foo_statistics
+  - foo_statistics by stuerp (not to be confused with [foo_statistics](https://www.foobar2000.org/components/view/foo_statistics) by grimes)
   - foo_skipcount
 
 - **Rendering**
-  - foo_uie_webview
+  - foo_webview2
 
 - **Access**
-  - (access WebView directly in context menu)
+  - (access WebView directly from context menu)
   - foo_ui_columns
   - foo_flowin <!--(optionally with foo_spider_monkey_panel)-->
 
@@ -44,13 +44,13 @@ Download and install the following components via menu `[File] > [Preferences] >
 Install at least one of the following play statistics providers:
 
 - [foo_playcount](https://www.foobar2000.org/components/view/foo_playcount) + [foo_enhanced_playcount](https://www.foobar2000.org/components/view/foo_enhanced_playcount)
-- [foo_statistics](https://github.com/stuerp/foo_statistics/releases)
+- [foo_statistics](https://www.foobar2000.org/components/view/foo_ui_columns)
 - [foo_skipcount](https://www.foobar2000.org/components/view/foo_skipcount)
 
 #### Rendering
 Install the WebView component used to render charts.
 
-- [foo_uie_webview](https://github.com/jecassis/foo_uie_webview)
+- [foo_webview2](https://www.foobar2000.org/components/view/foo_webview2)
 
 #### Access (choose an option)
 
