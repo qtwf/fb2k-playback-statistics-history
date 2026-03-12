@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <script src="./play-statistics-history-externals.js"></script>
+  <style>
+
+    :root {
+      --background: #ffffff;
+      --foreground: #171717;
+      --gray: #707070;
+      box-sizing: border-box;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --background: #0a0a0a;
+        --foreground: #ededed;
+        --gray: #A3A3A3;
+      }
+    }
+
+    body {
+      background: var(--background);
+      color: var(--foreground);
+      font-family: Arial, Helvetica, sans-serif;
+      min-width: 320px;
+      user-select: none;
+    }
+
+    #wrapper {
+      width: 100%;
+      height: calc(90vw * .47);
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+    .sliders {
+      display: flex;
+      width: 100%;
+      justify-content: center;
+      gap: .7em;
+      padding-top: 1em;
+      padding-bottom: 1em;
+      & .slider input {
+        width: calc((80vw / 2) - 2em);
+      }
+    }
+    .justify-center {
+      display: flex;
+      justify-content: center;
+    }
+    .flex-col {
+      display: flex;
+      flex-direction: column;
+    }
+    .hint {
+      font-size: 75%;
+      color: var(--gray);
+    }
+    .text-center {
+      text-align: center;
+    }
+    .lnk {
+      color: var(--color-progressive, #36c);
+      border-radius: 2px;
+      text-decoration: none;
+      cursor: pointer;
+      &:hover {
+        color: var(--color-progressive--hover, #3056a9);
+        text-decoration: underline;
+      }
+    }
+    #prefs-panel {
+      padding-left: 2em;
+      padding-right: 2em;
+      gap: 2em;
+      margin: 1em 0 1em 0;
+
+      & select {
+        width: fit-content;
+      }
+      & .label {
+        font-size: 85%;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      & .prefs-item {
+        display: flex;
+        flex-direction: column;
+        gap: .7em;
+        margin-top: 2.5em;
+        margin-bottom: 2.5em;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="justify-center" style="gap: 1em; margin: 1em 0 1em 0;">
+    <select id="chartType" title="The line plot for 'Aggregate' shows accumulated track plays over time">
+      <option value="time">Aggregate</option>
+      <option value="line">Line</option>
+      <option value="bar">Bar</option>
+      <option value="bar/time" selected>Bar + Aggregate</option>
+    </select>
+    <div id="rangeTypeOption">
+      <span>by&nbsp;&nbsp;</span>
+      <select id="rangeType">
+        <option value="year">Year</option>
+        <option value="quarter">Quarter</option>
+        <option value="month" selected>Month</option>
+        <option value="week">Week</option>
+        <option value="day">Day</option>
+      </select>
+    </div>
+  </div>
+
+  <p id="warning" class="hint text-center">
+    Flickers may occur when switching between line and bar charts. <span class="lnk" onClick="hideWarning()">Hide</span>
+  </p>
+
+  <div class="justify-center">
+    <div id="wrapper">
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+
+  <div class="sliders">
+    <select id="xAxisDist">
+      <option value="year">Year</option>
+      <option value="quarter">Quarter</option>
+      <option value="month" selected>Month</option>
+      <option value="week">Week</option>
+      <option value="day">Day</option>
+    </select>
+    <div class="slider">
+      <input type="range" id="startSlider">
+      <label class="justify-center"><span id="startDateLabel"></span></label>
+    </div>
+    <span style="place-content: flex-end;">to</span>
+    <div class="slider">
+      <input type="range" id="endSlider">
+      <label class="justify-center"><span id="endDateLabel"></span></label>
+    </div>
+  </div>
+
+  <div style="font-weight: bold; text-align: center;margin:1em;">
+    <span>Preferences</span>
+  </div>
+
+  <div id="prefs-panel">
+    <div class="prefs-item" title="The track data to be plotted above depends on either the track highlighted on the playlist, or the current playing track">
+      <label>
+        <span class="label">Preferred viewer</span>
+        <span class="hint">To be synced with the setting [Preferences] > [Display] > Selection Viewers</span>
+      </label>
+      <select id="prefViewer">
+        <option value="selected">From selected track</option>
+        <option value="playing">From playing track</option>
+      </select>
+    </div>
+    <div class="prefs-item">
+      <label>
+        <span class="label">Source Data</span>
+        <span class="hint">The statistics aggregator to be used in the chart. For skip count data, logging should be enabled via [Preferences] > [Tools] > [Skip Count] > Logging</span>
+      </label>
+      <div>
+        <select id="prefStatSrc" title="Installing one of these components is required">
+          <option value="foo_enhanced_playcount" selected>foo_enhanced_playcount</option>
+          <option value="foo_statistics">foo_statistics</option>
+          <option value="foo_skipcount">foo_skipcount</option>
+        </select>
+        <select id="prefSkipCountView" title="Installing foo_skipcount is required for this option to work">
+          <option value="include" selected>with skip count data</option>
+          <option value="exclude">without skip count data</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const _FB_WV = chrome?.webview?.hostObjects?.foo_uie_webview || null
+    const _FB_WV_S = chrome?.webview?.hostObjects?.sync?.foo_uie_webview || null
+    const isDarkScheme = window.matchMedia?.('(prefers-color-scheme: dark)').matches
+    const warning = document.getElementById('warning')
+    const chart_el = document.getElementById('chart')
+    const xAxisDist = document.getElementById('xAxisDist')
+    const startSlider = document.getElementById('startSlider')
+    const endSlider = document.getElementById('endSlider')
+    const startLabel = document.getElementById('startDateLabel')
+    const endLabel = document.getElementById('endDateLabel')
+    const rangeType = document.getElementById('rangeType')
+    const rangeTypeOption = document.getElementById('rangeTypeOption')
+    const chartType = document.getElementById('chartType')
+    
+    const prefViewer = document.getElementById('prefViewer')
+    const prefStatSrc = document.getElementById('prefStatSrc')
+    const prefSkipCountView = document.getElementById('prefSkipCountView')
+
+    warning.style = localStorage['hide-warning'] ? 'display:none;' : ''
+
+    prefStatSrc.value = localStorage['pref-stat_src'] || 'foo_enhanced_playcount'
+    prefViewer.value = localStorage['pref-viewer'] || 'selected'
+    prefSkipCountView.disabled = prefStatSrc.value === 'foo_skipcount'
+    prefSkipCountView.value = localStorage['pref-skip_count_view'] || 'include'
+
+    if (
+      _FB_WV.hasOwnProperty('createMetaDBHandlePtr') &&
+      _FB_WV.hasOwnProperty('getHandleFromMetaDBHandlePtr')
+    ) {
+      // is foo_uie_webview2
+      // enable multi track data plot
+    }
+  </script>
+
+  <script>// utils
+    function newDebounce(rootMs) {
+      let tt = null
+      return {
+        start: function (fn, ms) {
+          clearTimeout(tt)
+          tt = setTimeout(async () => {
+            await fn()
+          }, ms || rootMs || 400)
+        },
+        abort: function () {
+          clearTimeout(tt)
+        },
+      }
+    }
+
+    const qTm = [NaN, 1, 4, 7, 10]
+
+    function formatDate(isEndValue, timestamp, type) {
+      const d = new Date(Number(timestamp))
+      if (type === 'year') return d.getFullYear() - (isEndValue ? 1 : 0)
+      if (type === 'quarter') return d.getFullYear() +
+          " Q" + (Math.ceil((d.getMonth() + 1) / 3) + (isEndValue ? -1 : 1))
+      if (type === 'month') return `${
+        d.getFullYear()
+      }-${
+        String(d.getMonth()+1).padStart(2,'0')
+      }`
+      return d.toISOString().split('T')[0]
+    }
+
+    function parseToScatterData({
+      rawData: raw,
+      x_rounding,
+
+    }) {
+      x_rounding = x_rounding ?? rangeType.value
+      const f_start = Number(startSlider.value)
+      const f_end = Number(endSlider.value)
+      const indexData = { bump_count: 0 }
+      const rawLen = raw.length
+      const rawLastIdx = rawLen - 1
+      const scatterData = []
+
+      for (let i = 0; i < rawLen; i++) {
+        const dt = new Date(Number(raw[i]))
+        const day = dt.toLocaleDateString()
+
+        indexData.bump_count++
+
+        switch (x_rounding) {
+          case 'time':
+
+            if (raw[i] >= f_start && raw[i] <= f_end) scatterData.push({
+              x: raw[i],
+              y: indexData.bump_count
+            })
+            break
+          case 'day':
+            if (!indexData[day]) indexData[day] = {
+              n: Number(new Date(day)),
+              play_count: 0,
+              times: []
+            }
+
+            indexData[day].play_count++
+            //indexData[day].times.push(raw[i])
+            break
+
+          case 'week':
+            const monthOfWeek = dt.getFullYear() +'/'+ (dt.getMonth() + 1)
+            const nthWeek = Math.ceil(dt.getDate() / 7)
+            const week = monthOfWeek + '.' + nthWeek
+
+            if (!indexData[week]) indexData[week] = {
+              n: Number(new Date(monthOfWeek)) + (8.64e8 * nthWeek), // week labels are misaligned
+              play_count: 0,
+              times: []
+            }
+
+            indexData[week].play_count++
+            break
+
+          case 'month':
+            const month = dt.getFullYear() +'/'+ (dt.getMonth() + 1)
+
+            if (!indexData[month]) indexData[month] = {
+              n: Number(new Date(month)),
+              play_count: 0,
+              times: []
+            }
+
+            indexData[month].play_count++
+            break
+
+          case 'quarter':
+            const yyyy = dt.getFullYear()
+            const mm = dt.getMonth() + 1
+            const nthQuarter = Math.ceil(mm / 3)
+            const quarterPt = yyyy +'/'+ (qTm[nthQuarter] + (i === rawLastIdx ? 2 : 0))
+            const quarter = yyyy + '.' + nthQuarter
+            
+            if (!indexData[quarter]) indexData[quarter] = {
+              n: Number(new Date(quarterPt)),
+              play_count: 0,
+              times: []
+            }
+
+            indexData[quarter].play_count++
+            break
+
+          case 'year':
+            const year = String(dt.getFullYear())
+
+            if (!indexData[year]) indexData[year] = {
+              n: Number(new Date(year)),
+              play_count: 0,
+              times: []
+            }
+
+            indexData[year].play_count++
+            break
+        }
+      }
+
+      if (x_rounding !== 'time') {
+        for (const [t, obj] of Object.entries(indexData)) {
+          if (t === 'bump_count') continue
+          if (obj.n >= f_start && obj.n <= f_end) scatterData.push({
+            x: obj.n,
+            y: obj.play_count
+          })
+        }
+      }
+
+      return {
+        data: scatterData,
+        index: indexData,
+      }
+    }
+
+    function parseRawToDataset(sets) {
+      return sets.map(v => (
+        {
+          label: v.label,
+          data: parseToScatterData(v).data,
+          backgroundColor: randomColor({
+            seed: v.label +
+              (v.chart_type.match('time') ? v.chart_type + Math.random(0, 5) : '') +
+              v.x_rounding,
+            luminosity: isDarkScheme ? 'light' : 'dark',
+          }),
+          type: v.chart_type,
+          ...(v.chart_type === 'bar' ? {
+            //barPercentage: .95,
+            categoryPercentage: chartType.value === 'bar/time' ? 0.5 : 1,
+            order: 2
+          } : [])
+        }
+      ))
+    }
+
+    function parseNumArrAsString(arr, splitChar = ', ') {
+      return arr.slice(1, arr.length - 1).split(splitChar).map(v => Number(v))
+    }
+
+    const FILETIME_EPOCH_DIFF = BigInt(116444736000000000)
+    const nanosToMillis = BigInt(10000)
+    // https://github.com/ogmini/FILETIME_Converter_Page
+    function fileTimeToUnix(fileTime) {
+      return Number((fileTime - FILETIME_EPOCH_DIFF) / nanosToMillis)
+    }
+
+    const tf_props = {
+      _timestamps: '[%_timestamps%]', // foo_statistics
+      played_times_js: '[%played_times_js%]', // foo_enhanced_playcount
+      skip_times_js: '[%skip_times_js%]', // foo_skip_count
+      title: '[%title%]',
+      artist: '[%artist%]',
+      album: '[%album%]',
+    }
+
+    async function getTrackMeta(ft_fn) {
+      const res = {}
+      for (const key of Object.keys(tf_props)) {
+        let value = await ft_fn(tf_props[key])
+        
+        if (value) switch (key) {
+          case '_timestamps':
+            const dotnetTickArr = value.split(';')
+            value = dotnetTickArr.map(t => {
+              const value = t.toLowerCase().startsWith('0x') 
+                ? BigInt(t)
+                : BigInt(t);
+              return fileTimeToUnix(value)
+            })
+
+            break
+          case 'skip_times_js':
+          case 'played_times_js':
+            value = parseNumArrAsString(value)
+            break
+        }
+
+        res[key] = value
+      }
+      //console.table({ title: res.title, artist: res.artist, album: res.album })
+      return res
+    }
+  </script>
+
+  <script>
+
+    let rawSets = []
+
+    const verticalIntersectHoverPlugin = {
+      afterDraw: chart => {
+        if (chart.tooltip?._active?.length) {
+          const x = chart.tooltip._active[0].element.x
+          const yAxis = chart.scales.y
+          const d_ctx = chart.ctx
+          d_ctx.save()
+          d_ctx.beginPath()
+          d_ctx.moveTo(x, yAxis.top)
+          d_ctx.lineTo(x, yAxis.bottom)
+          d_ctx.lineWidth = 1
+          d_ctx.strokeStyle = '#fff3'
+          d_ctx.stroke()
+          d_ctx.restore()
+        }
+      }
+    }
+
+    const options_scales_y_ticks_callback = (value, index, ticks) => {
+      if (value === 0) return ' '
+      return value + ' times'
+    }
+
+    const chartCfg = {
+      data: {
+        datasets: parseRawToDataset(rawSets)
+      },
+      type: 'line',
+      options: {
+        responsive: true,
+        borderColor: '#aaa',
+        elements: {
+          bar: {
+            borderWidth: 0,
+          },
+          line: {
+            borderWidth: 1
+          }
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'month',
+              displayFormats: {
+                // upstream problem: https://github.com/date-fns/date-fns/pull/3216/changes https://www.unicode.org/reports/tr35/tr35-dates.html#Date_Field_Symbol_Table
+                // week: "W'Q' MMM, yyyy",
+                week: "w, yyyy",
+              }
+            },
+            ticks: {
+              padding: 0
+            },
+            grid: {
+              color: isDarkScheme ? "#fff2" : undefined,
+            }
+          },
+          y: {
+            type: 'linear',
+            ticks: {
+              stepSize: 2
+            },
+            grid: {
+              color: isDarkScheme ? "#fff1" : undefined,
+            },
+          }
+        },
+        interaction: {
+          intersect: false,
+          mode: 'index',
+        },
+        plugins: {
+          tooltip: {
+            titleColor: isDarkScheme ? '#ffffff' : '#171717',
+            borderColor: isDarkScheme ? '#ffffff' : '#171717',
+            borderWidth: 2,
+            backgroundColor: isDarkScheme ? '#171717' : '#ffffff',
+            bodyColor: '', // how does it color
+          }
+        },
+        animation: false,
+        animations: {
+          colors: false,
+          x: false
+        },
+        transitions: { active: { animation: { duration: 0 } } },
+      },
+      plugins: []
+      
+    }
+
+    let ctx = chart_el.getContext('2d')
+    let chart = new Chart(...createChartConfig())
+
+    function createChartConfig(destroy = false, datasets) {
+      const t_cfg = structuredClone(chartCfg)
+
+      if (destroy) chart.destroy()
+      if (datasets) {
+        t_cfg.data.datasets = parseRawToDataset(datasets)
+      }
+      if (t_cfg.type !== 'radar') { // https://github.com/chartjs/Chart.js/issues/11291#issuecomment-1551244584
+        //* remove the RadialLinearScale from the chart's scales
+        if (t_cfg.options.scales?.r) delete t_cfg.options.scales?.r
+      }
+
+      t_cfg.plugins.push(verticalIntersectHoverPlugin)
+      t_cfg.options.scales.y.ticks.callback = options_scales_y_ticks_callback
+      ctx = chart_el.getContext('2d')
+
+
+      return [ctx, t_cfg]
+    }
+
+    function updateChart() {
+      const isBarType = chartType.value === 'bar'//?.startsWith('bar')
+      const nxtChartType = isBarType ? 'bar' : 'line'
+
+      //chart.type = nxtChartType // doesnt work
+      if (chartCfg.type !== nxtChartType) {
+        chart.destroy()
+        chartCfg.type = nxtChartType
+        chart = new Chart(...createChartConfig(true))
+      }
+
+      const { x, y } = chart.options.scales
+
+      x.time.unit = xAxisDist.value
+      y.beginAtZero = isBarType
+
+      chart.data.datasets = parseRawToDataset(rawSets)
+      chart.update()
+    }
+
+    function getChartMinMaxDateX() {
+      const pts = []
+      for (const item of rawSets) {
+        if (item.rawData) pts.push(...item.rawData)
+      }
+      const res = [Math.min(...pts), Math.max(...pts)]
+
+      switch (rangeType.value) {
+        case 'quarter':
+          for (let i = 0; i < 2; i++) {
+            const dt = new Date(res[i])
+            const yyyy = dt.getFullYear()
+            const mm = dt.getMonth() + 1
+            const nthQuarter = Math.ceil(mm / 3)
+            const month = qTm[nthQuarter] + (i === 0 ? -1 : 3)
+            res[i] = Date.parse((yyyy + (month < 1 ? -1 : (month > 12 ? 1 : 0))) + '/' + (month < 1 ? 13 - (month || 1) : (month > 12 ? month - 12 : month)))
+          }
+          break
+        case 'year':
+          for (let i = 0; i < 2; i++) {
+            res[i] = Date.parse(String(new Date(res[i]).getFullYear() + (i === 1 ? 1 : 0))) - (i === 0 ? 1 : 0)
+          }
+          break
+        case 'month':
+        case 'week':
+          for (let i = 0; i < 2; i++) {
+            const dt = new Date(res[i])
+            const yyyy = dt.getFullYear()
+            const mm = dt.getMonth() + 1
+            res[i] = Date.parse(yyyy + '/' + (i === 1 ? mm + 1 : mm))
+          }
+          break
+      } 
+      return res
+    }
+
+    function updateLabels() {
+      const type = rangeType.value
+      startLabel.textContent = formatDate(false, startSlider.value, type)
+      endLabel.textContent = formatDate(true, endSlider.value, type)
+    }
+
+    function updateRangeSelections() {
+      const [startLimit, endLimit] = getChartMinMaxDateX() || [0, Date.now()]
+
+      startSlider.min = startLimit
+      startSlider.max = endLimit
+      startSlider.value = startLimit
+
+      endSlider.min = startLimit
+      endSlider.max = endLimit
+      endSlider.value = endLimit
+    }
+
+    const debounce = newDebounce(100)
+
+    startSlider.addEventListener('input', async () => {
+      if (startSlider.value > endSlider.value) {
+        endSlider.value = startSlider.value
+      }
+      updateLabels()
+      await debounce.start(updateChart)
+    })
+
+    endSlider.addEventListener('input', async () => {
+      if (endSlider.value < startSlider.value) {
+        startSlider.value = endSlider.value
+      }
+      updateLabels()
+      await debounce.start(updateChart)
+    })
+
+    rangeType.addEventListener('change', async () => {
+      xAxisDist.value = rangeType.value
+      updateRangeSelections()
+      updateLabels()
+      await debounce.start(updateChart)
+    })
+
+    xAxisDist.addEventListener('change', async () => {
+      await debounce.start(updateChart)
+    })
+
+    chartType.addEventListener('change', async () => {
+      if (chartType.value === 'time') {
+        rangeTypeOption.hidden = true
+        rangeType.value = 'day'
+        xAxisDist.value = 'day'
+        updateRangeSelections()
+        updateLabels()
+      }
+      else rangeTypeOption.hidden = false
+      await debounce.start(initChartDisp)
+    })
+
+    prefStatSrc.addEventListener('change', async () => {
+      prefSkipCountView.disabled = prefStatSrc.value === 'foo_skipcount'
+      localStorage['pref-stat_src'] = prefStatSrc.value
+      await debounce.start(initChartDisp)
+    })
+
+    prefSkipCountView.addEventListener('change', async () => {
+      localStorage['pref-skip_count_view'] = prefSkipCountView.value
+      await debounce.start(initChartDisp)
+    })
+
+    prefViewer.addEventListener('change', async () => {
+      localStorage['pref-viewer'] = prefViewer.value
+    })
+
+    function hideWarning() {
+      localStorage['hide-warning'] = true
+      warning.style = 'display:none;'
+    }
+
+  </script>
+
+  <script>// hooks/main
+
+     async function onPlaybackStarting(argument) {
+       if (prefViewer.value === "playing") await debounce.start(initChartDisp)
+     }
+     async function onPlaybackNewTrack(argument) {
+       if (prefViewer.value === "playing") await debounce.start(initChartDisp)
+     }
+
+    async function initChartDisp(command, paused) {
+      if (paused) return
+      rawSets = []
+
+      const tr_1 = await getTrackMeta(_FB_WV.GetFormattedText)/*
+      const tr_2 = await getTrackMeta(_FB_WV_S.GetFormattedText)
+
+      if (tr_2.played_times_js && !_FB_WV_S.isPlaying) {
+        rawSets.push(
+          {
+            rawData: parseNumArrAsString(tr_2.played_times_js),
+            label: tr_1.title || "<untitled>",
+          }
+        )
+      }*/
+
+      const srcPref = prefStatSrc.value
+
+      if (['foo_statistics', 'foo_enhanced_playcount'].includes(srcPref)) {
+
+        const rawData = srcPref === 'foo_statistics'
+          ? tr_1._timestamps ?? tr_1.played_times_js
+          : tr_1.played_times_js
+
+        if (rawData) {
+
+          if (chartType.value !== 'time') rawSets.splice(0, 0,
+            {
+              rawData,
+              label: '[▶] ' + tr_1.title || "<untitled>",
+              chart_type: chartType.value.startsWith('bar') ? 'bar' : 'line'
+            }
+          )
+          if (['bar/time', 'time'].includes(chartType.value)) rawSets.push(
+            {
+              rawData,
+              label: '*[▶] ' + (tr_1.title || "<untitled>"),
+              chart_type: 'line',
+              x_rounding: 'time'
+            }
+          )
+
+        }
+
+      }
+
+      if ((srcPref === 'foo_skipcount' || prefSkipCountView.value === 'include') && tr_1.skip_times_js) {
+
+        const rawData = tr_1.skip_times_js
+        rawSets.push(
+          {
+            rawData,
+            label: '[⏭] ' + (tr_1.title || "<untitled>"),
+            chart_type: 'line',
+            x_rounding: 'time'
+          }
+        )
+      }
+
+      updateRangeSelections()
+      updateLabels()
+      updateChart()
+    }
+
+    async function onPlaylistSelectedItemsChanged(playlistIndex, selectedItems) {
+      if (prefViewer.value === "selected") await debounce.start(initChartDisp)
+      return;
+
+      selectedItems = parseNumArrAsString(selectedItems, ',')
+      const sel_pl = (await _FB_WV.getPlaylistItems(playlistIndex))
+        .match(/(?!")file:\/\/.*?(?=")/g)
+      const sel_tracks_pth = selectedItems.map(idx => sel_pl[idx])
+      for (const idx of selectedItems) {
+        sel_tracks_pth.push(sel_pl[idx])
+      }
+      console.log(sel_tracks_pth)
+
+
+      //rawSets = 
+      updateRangeSelections()
+      updateLabels()
+      updateChart()
+    }
+
+    initChartDisp()
+
+  </script>
+
+</body>
+</html>
