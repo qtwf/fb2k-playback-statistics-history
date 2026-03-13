@@ -44,7 +44,7 @@ Download and install the following components via menu `[File] > [Preferences] >
 Install at least one of the following play statistics providers:
 
 - [foo_playcount](https://www.foobar2000.org/components/view/foo_playcount) + [foo_enhanced_playcount](https://www.foobar2000.org/components/view/foo_enhanced_playcount)
-- [foo_statistics](https://www.foobar2000.org/components/view/foo_ui_columns)
+- [foo_statistics](https://github.com/stuerp/foo_statistics/releases)
 - [foo_skipcount](https://www.foobar2000.org/components/view/foo_skipcount)
 
 #### Rendering
