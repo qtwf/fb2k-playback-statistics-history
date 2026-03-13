@@ -232,6 +232,7 @@
       }
     }
 
+    const dateLocaleDef = new Intl.DateTimeFormat("ja") // yyyy/mm/dd ftw
     const qTm = [NaN, 1, 4, 7, 10]
 
     function formatDate(isEndValue, timestamp, type) {
@@ -250,39 +251,38 @@
     function parseToScatterData({
       rawData: raw,
       x_rounding,
-
+      f_start,
+      f_end,
     }) {
       x_rounding = x_rounding ?? rangeType.value
-      const f_start = Number(startSlider.value)
-      const f_end = Number(endSlider.value)
-      const indexData = { bump_count: 0 }
+      f_start = f_start ?? Number(startSlider.value)
+      f_end = f_end ?? Number(endSlider.value)
+      let bump_count = 0
+      const indexData = {}
       const rawLen = raw.length
       const rawLastIdx = rawLen - 1
       const scatterData = []
 
       for (let i = 0; i < rawLen; i++) {
         const dt = new Date(Number(raw[i]))
-        const day = dt.toLocaleDateString()
 
-        indexData.bump_count++
+        bump_count++
 
         switch (x_rounding) {
           case 'time':
-
             if (raw[i] >= f_start && raw[i] <= f_end) scatterData.push({
               x: raw[i],
-              y: indexData.bump_count
+              y: bump_count
             })
             break
           case 'day':
+            const day = dateLocaleDef.format(dt)
             if (!indexData[day]) indexData[day] = {
               n: Number(new Date(day)),
-              play_count: 0,
-              times: []
+              play_count: 0
             }
 
             indexData[day].play_count++
-            //indexData[day].times.push(raw[i])
             break
 
           case 'week':
@@ -292,8 +292,7 @@
 
             if (!indexData[week]) indexData[week] = {
               n: Number(new Date(monthOfWeek)) + (8.64e8 * nthWeek), // week labels are misaligned
-              play_count: 0,
-              times: []
+              play_count: 0
             }
 
             indexData[week].play_count++
@@ -304,8 +303,7 @@
 
             if (!indexData[month]) indexData[month] = {
               n: Number(new Date(month)),
-              play_count: 0,
-              times: []
+              play_count: 0
             }
 
             indexData[month].play_count++
@@ -320,8 +318,7 @@
             
             if (!indexData[quarter]) indexData[quarter] = {
               n: Number(new Date(quarterPt)),
-              play_count: 0,
-              times: []
+              play_count: 0
             }
 
             indexData[quarter].play_count++
@@ -332,8 +329,7 @@
 
             if (!indexData[year]) indexData[year] = {
               n: Number(new Date(year)),
-              play_count: 0,
-              times: []
+              play_count: 0
             }
 
             indexData[year].play_count++
@@ -343,7 +339,6 @@
 
       if (x_rounding !== 'time') {
         for (const [t, obj] of Object.entries(indexData)) {
-          if (t === 'bump_count') continue
           if (obj.n >= f_start && obj.n <= f_end) scatterData.push({
             x: obj.n,
             y: obj.play_count
@@ -595,6 +590,15 @@
             const yyyy = dt.getFullYear()
             const mm = dt.getMonth() + 1
             res[i] = Date.parse(yyyy + '/' + (i === 1 ? mm + 1 : mm))
+          }
+          break
+        case 'day':
+          for (let i = 0; i < 2; i++) {
+            const dt = new Date(res[i])
+            const yyyy = dt.getFullYear()
+            const mm = dt.getMonth() + 1
+            const dd = dt.getDate()
+            res[i] = Date.parse(yyyy + '/' + mm + '/' + (dd + i))
           }
           break
       } 
